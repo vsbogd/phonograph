@@ -1,0 +1,295 @@
+<!doctype html>
+<html style="max-width: 210mm; margin: auto">
+  <head>
+    <meta charset="utf-8">
+    <title>Toy educational phonograph disc generator</title>
+    <style>
+      .sheet {
+        /* add shadow to visually mark the picture's borders */
+        margin: 12px auto;
+        box-shadow: 0 0 6px rgba(0,0,0,0.2);
+      }
+      @media print {
+        @page {
+          size: A4 portrait;
+          margin: 0; /* margins are set by drawing on canvas */
+        }
+        .sheet {
+          /* make sure the printed canvas is not bigger than A4 */
+          width: 100% !important;
+          height: 100% !important; 
+          /* don't print shadow */
+          margin: 0;
+          box-shadow: none;
+        }
+        /* control elements should not be printed */
+        .no-print {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="no-print">
+      <p>Generate discs for the toy educational phonograph. There are 288
+      Chinese, 96 English and 10 DIY discs supported by standard device. It is
+      also possible to generate arbitrary disc code from 0 to 1023.</p>
+      <p>Select the language (or "Any" for an arbitrary code), select the
+      number of the disc, fill title if you wish and press "Add" button. New
+      disc will be added to the page. Use "Print" button to show print dialog.
+      First page contains back sides of the discs, second page contains front
+      sides. Ensure that margins are off and scale is 100% in the print dialog
+      to be able combining back and front images correctly.</p>
+      <p>If your printer is able to print in borderless mode you can tick the
+      corresponding checkbox. It allows printing up to 12 discs on a single
+      page</p>
+      <div>
+        <label for="lang">Language:</label>
+        <select id="lang">
+          <option value="Any">Any (0-1023)</option>
+          <option value="Chinese">Chinese (1-288)</option>
+          <option value="English">English (1-96)</option>
+          <option value="DIY">DIY (1-10)</option>
+        </select>
+      </div>
+      <div>
+        <label for="">Number (0-1023):</label>
+        <input id="num" min="0" max="1023"/>
+      </div>
+      <div>
+        <label for="">Title:</label>
+        <input id="title"/>
+      </div>
+      <div>
+        <label for="borderless">Borderless mode</label>
+        <input type="checkbox" id="borderless" onclick="drawDiscs()">
+      </div>
+      <p id="message" style="color: red"></p>
+      <div>
+        <button type="button" onclick="window.print()">Print</button>
+        <button type="button" onclick="clearDiscs()">Clear</button>
+        <button type="button" onclick="undoDisc()">Undo</button>
+        <button type="button" onclick="addDisc()">Add</button>
+      </div>
+    </div>
+    <div style="display: grid; grid-template-columns: lfr">
+      <canvas id="back_canvas" class="sheet"></canvas>
+      <canvas id="front_canvas" class="sheet"></canvas>
+    </div>
+
+    <script>
+      const LANGS = {
+        'Any': [0, 0, 1023],
+        'Chinese': [0, 1, 288],
+        'English': [586, 1, 96],
+        'DIY': [576, 1, 10],
+      };
+        
+      const discs = [];
+
+      function addDisc() {
+        lang = document.getElementById('lang').value;
+        num = document.getElementById('num').value;
+        title = document.getElementById('title').value;
+        if (!checkNum(lang, num)) {
+          return;
+        }
+        clearMessage();
+        discs.push([lang, num, title]);
+        drawDiscs();
+      }
+
+      function checkNum(lang, num) {
+        range = LANGS[lang];
+        if (num < range[1] || num > range[2]) {
+          document.getElementById('message').innerText =
+            'Disc number should be between ' + range[1] + ' and ' + range[2];
+          return false;
+        } else {
+          return true;
+        }
+      }
+
+      function undoDisc() {
+        clearMessage();
+        discs.pop();
+        drawDiscs();
+      }
+
+      function clearDiscs() {
+        clearMessage();
+        discs.length = 0;
+        drawDiscs();
+      }
+
+      function clearMessage() {
+        document.getElementById('message').innerText = '';
+      }
+
+      const DPI = 300;
+
+      function mmToPx(mm) {
+        return Math.round(mm * DPI / 25.4);
+      }
+
+      function degToRad(deg) {
+        return deg / 360 * 2 * Math.PI;
+      }
+
+      function addCrc(id) {
+        crc = false;
+        for (let i = 0; i < 10; ++i) {
+          crc = (id & (1 << i) ? !crc : crc);
+        }
+        return (id << 1) | (crc ? 1 : 0);
+      }
+
+      function drawSector(ctx, x, y, disc_radius, startDeg, endDeg, fillStyle) {
+        ctx.beginPath();
+        ctx.fillStyle = fillStyle;
+        ctx.arc(x, y, disc_radius, degToRad(-startDeg), degToRad(-endDeg), true);
+        ctx.lineTo(x, y);
+        ctx.fill();
+      }
+
+      function drawDiscBack(ctx, x, y, code) {
+        x += disc_radius;
+        y += disc_radius;
+
+        angle = 310;
+        for (let i = 0; i < 11; i++) {
+          bit = code & 1;
+          code = code >> 1;
+          if (!bit) {
+            drawSector(ctx, x, y, disc_radius, angle, angle += 6, 'black');
+            drawSector(ctx, x, y, disc_radius, angle, angle += 18, 'white');
+          } else {
+            drawSector(ctx, x, y, disc_radius, angle, angle += 18, 'black');
+            drawSector(ctx, x, y, disc_radius, angle, angle += 6, 'white');
+          }
+        }
+        drawSector(ctx, x, y, disc_radius, angle, angle + 24, 'black');
+
+        drawSector(ctx, x, y, plate_radius, 0, 360, 'white');
+        drawDiscBorder(ctx, x, y);
+        drawDiscCenter(ctx, x, y);
+      }
+
+      function drawDiscBorder(ctx, x, y) {
+        ctx.beginPath();
+        ctx.arc(x, y, disc_radius, degToRad(0), degToRad(360), true);
+        ctx.stroke();
+      }
+
+      function drawDiscCenter(ctx, x, y) {
+        ctx.beginPath();
+        ctx.moveTo(x - triangle_side / 2, y - triangle_height / 3);
+        ctx.lineTo(x + triangle_side / 2, y - triangle_height / 3);
+        ctx.lineTo(x, y + triangle_height * 2 / 3);
+        ctx.lineTo(x - triangle_side / 2, y - triangle_height / 3);
+        ctx.stroke();
+      }
+
+      function drawDiscFront(ctx, x, y, text) {
+        x += disc_radius;
+        y += disc_radius;
+        drawDiscBorder(ctx, x, y);
+        drawDiscCenter(ctx, x, y);
+
+        y -= triangle_height;
+        ctx.fillStyle = 'black';
+        ctx.font = mmToPx(5) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(text, x, y);
+      }
+
+      function clearCtx(ctx) {
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.strokeStyle = 'black';
+      }
+
+      function drawPintArea(ctx, margins) {
+        ctx.strokeRect(margins.width, margins.height,
+          ctx.canvas.width - margins.width * 2,
+          ctx.canvas.height - margins.height * 2);
+      }
+
+      function drawDiscs() {
+        clearCtx(back_ctx);
+        clearCtx(front_ctx);
+
+        const min_margins_mm = { width: 10, height: 10 };
+        if (document.getElementById('borderless').checked) {
+          min_margins_mm.width = 0;
+          min_margins_mm.height = 0;
+        }
+        const min_margins_px = convertObj(min_margins_mm, mmToPx);
+        const margins = {
+          width: centeringMargin(paper_px.width, min_margins_px.width),
+          height: centeringMargin(paper_px.height, min_margins_px.height),
+        }
+
+        // for debugging
+        //drawPintArea(back_ctx, margins);
+        //drawPintArea(front_ctx, margins);
+
+        x = margins.width;
+        y = margins.height;
+        for (let i = 0; i < discs.length; i++) {
+          lang = discs[i][0];
+          num = discs[i][1];
+          title = discs[i][2].trim();
+          if (title.length == 0) {
+            title = '' + lang + '-' + num;
+          }
+          id = LANGS[lang][0] + num;
+          code = addCrc(id);
+          drawDiscBack(back_ctx, x, y, code);
+          drawDiscFront(front_ctx, front_ctx.canvas.width - x - disc_diameter, y, title);
+          x += disc_diameter;
+          if (x + disc_diameter + margins.width > back_ctx.canvas.width) {
+            x = margins.width;
+            y += disc_diameter;
+          }
+        }
+      }
+
+      function convertObj(obj_in, conversion) {
+        obj_out = {};
+        for ([key, value] of Object.entries(obj_in)) {
+          obj_out[key] = conversion(value);
+        }
+        return obj_out
+      }
+
+      function centeringMargin(size, min_margin) {
+        max_size = size - 2 * min_margin;
+        max_disc_count = Math.trunc(max_size / disc_diameter);
+        return Math.trunc((size - max_disc_count * disc_diameter) / 2);
+      }
+
+      function initCanvas(id) {
+        const canvas = document.getElementById(id);
+        canvas.width = paper_px.width;
+        canvas.height = paper_px.height;
+        canvas.style.width = paper_mm.width + 'mm';
+        canvas.style.height = paper_mm.height + 'mm';
+        return canvas.getContext('2d');
+      }
+
+      const disc_diameter = mmToPx(68);
+      const disc_radius = disc_diameter / 2;
+      const plate_radius = mmToPx(12);
+      const triangle_side = mmToPx(9);
+      const triangle_height = Math.sqrt(3) / 2 * triangle_side;
+
+      const paper_mm = { width: 210, height: 297 };
+      const paper_px = convertObj(paper_mm, mmToPx);
+
+      const back_ctx = initCanvas('back_canvas');
+      const front_ctx = initCanvas('front_canvas');
+      drawDiscs();
+    </script>
+  </body>
+</html>
