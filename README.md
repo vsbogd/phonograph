@@ -3,7 +3,8 @@
 This repo contains various tools for working with toy educational phonograph:
 - [disc generator page](https://vsbogd.github.io/phonograph/disc.html) to
   generate and print the discs
-- `smp2mp3.py` utility to decode/encode .smp files from the device
+- `smp2mp3.py` utility to decode/encode .smp files from the device in Python
+- `smp2mp3.c` utility to decode/encode .smp files from the device in C
 
 ## Disc code
 
